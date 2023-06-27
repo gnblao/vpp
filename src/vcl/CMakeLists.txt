@@ -24,7 +24,7 @@ add_vpp_library(vppcom
   vcl_sapi.c
 
   LINK_LIBRARIES
-  vppinfra svm vlibmemoryclient rt pthread
+  vlib vppinfra svm vlibmemoryclient rt pthread
 
   DEPENDS
   api_headers

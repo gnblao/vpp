@@ -49,6 +49,8 @@
 #include <vppinfra/random_buffer.h>
 #include <vppinfra/time.h>
 
+#include <vlib/vlib.h>
+
 #include <pthread.h>
 
 

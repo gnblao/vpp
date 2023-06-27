@@ -51,6 +51,7 @@ typedef struct
   u32 prev;	/**< Previous linked-list element pool index */
   u32 start;	/**< Start of segment, normalized*/
   u32 length;	/**< Length of segment */
+  u32 bi;	/**< buffer index */
 } ooo_segment_t;
 
 typedef struct
@@ -76,12 +77,14 @@ typedef struct svm_fifo_shr_
   CLIB_CACHE_LINE_ALIGN_MARK (consumer);
   fs_sptr_t head_chunk;		/**< tracks chunk where head lands */
   u32 head;			/**< fifo head position/byte */
+  u32 head2;			/**< fifo head position/byte */
   volatile u32 want_deq_ntf;	/**< producer wants nudge */
   volatile u32 has_deq_ntf;
   u32 deq_thresh; /**< fifo threshold used for notifications */
 
   CLIB_CACHE_LINE_ALIGN_MARK (producer);
   u32 tail;			/**< fifo tail position/byte */
+  u32 tail2;			/**< fifo tail position/byte */
   fs_sptr_t tail_chunk;		/**< tracks chunk where tail lands */
   volatile u8 n_subscribers;	/**< Number of subscribers for io events */
   u8 subscribers[SVM_FIFO_MAX_EVT_SUBSCRIBERS];
@@ -113,6 +116,10 @@ typedef struct _svm_fifo
   svm_fifo_chunk_t *chunks_at_attach; /**< chunks to be accounted at detach */
   svm_fifo_shared_t *hdr_at_attach;   /**< hdr to be freed at detach */
 
+  u32 *free_buffers;          /** Vector of tx buffer free lists */
+  void *cache_buffer;  /** cache buffer*/
+  u32 cache_pos;       /** cache buffer pos*/
+  u32 cache_length;    /** cache buffer length in chain*/
 #if SVM_FIFO_TRACE
   svm_fifo_trace_elem_t *trace;
 #endif

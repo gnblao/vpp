@@ -344,6 +344,41 @@ session_mq_shutdown_handler (void *data)
   vnet_shutdown_session (a);
 }
 
+static u8 *
+format_session_recycle_buffer_msg (u8 * s, va_list * va)
+{
+  session_recycle_buffer_msg_t *mp;
+  mp = va_arg (*va, void *);
+
+  s = format(s, "mp->n_buffers:%u", mp->n_buffers);
+  s = format(s, " mp->buffers:");
+
+  uword i;
+  for (i = 0; i < mp->n_buffers; i++)
+    {
+      if (i > 0)
+	s = format (s, ", ");
+      s = format (s, "%u", mp->buffers[i]);
+    }
+  return s;
+}
+
+static void
+session_mq_recycle_buffer_handler (void *data)
+{
+  session_recycle_buffer_msg_t *mp = (session_recycle_buffer_msg_t *) data;
+  application_t *app;
+
+  app = application_lookup (mp->client_index);
+  if (!app)
+    return;
+
+  clib_warning("%U", format_session_recycle_buffer_msg, mp);
+  if (mp->n_buffers) {
+      vlib_buffer_free(vlib_get_main(), mp->buffers, mp->n_buffers);
+  }
+}
+
 static void
 session_mq_disconnect_handler (void *data)
 {
@@ -1696,6 +1731,9 @@ session_event_dispatch_ctrl (session_worker_t * wrk, session_evt_elt_t * elt)
     case SESSION_CTRL_EVT_SHUTDOWN:
       session_mq_shutdown_handler (session_evt_ctrl_data (wrk, elt));
       break;
+    case SESSION_CTRL_EVT_RECYCLE_BUFFER:
+      session_mq_recycle_buffer_handler (session_evt_ctrl_data (wrk, elt));
+      break;
     case SESSION_CTRL_EVT_DISCONNECT:
       session_mq_disconnect_handler (session_evt_ctrl_data (wrk, elt));
       break;
@@ -1820,7 +1858,7 @@ session_update_time_subscribers (session_main_t *smm, clib_time_type_t now,
     (*fn) (now, thread_index);
 }
 
-always_inline void
+void
 session_evt_add_to_list (session_worker_t * wrk, session_event_t * evt)
 {
   session_evt_elt_t *elt;

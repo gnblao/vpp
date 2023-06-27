@@ -509,6 +509,10 @@ typedef struct
 
 clib_error_t *vlib_buffer_main_init (struct vlib_main_t *vm);
 
+u8 vlib_buffer_pool_create_fake (struct vlib_main_t * vm, char *name, u32 data_size,
+        u32 physmem_map_index);
+void vlib_buffer_main_alloc (struct vlib_main_t * vm);
+
 format_function_t format_vlib_buffer_pool_all;
 
 int vlib_buffer_set_alloc_free_callback (

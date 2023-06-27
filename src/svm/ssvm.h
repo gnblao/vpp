@@ -88,6 +88,7 @@ typedef struct
   u8 numa;			/**< UNUSED: numa requested at alloc time */
   int is_server;
   int huge_page;
+  int log2_page_size;
   union
   {
     int fd;			/**< memfd segments */
@@ -192,6 +193,7 @@ void ssvm_delete_shm (ssvm_private_t * ssvm);
 
 int ssvm_server_init_memfd (ssvm_private_t * memfd);
 int ssvm_client_init_memfd (ssvm_private_t * memfd);
+int ssvm_client_init_buffers_memfd (ssvm_private_t * memfd);
 void ssvm_delete_memfd (ssvm_private_t * memfd);
 
 int ssvm_server_init_private (ssvm_private_t * ssvm);

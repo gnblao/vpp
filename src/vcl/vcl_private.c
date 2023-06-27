@@ -545,6 +545,11 @@ vcl_segment_attach_session (uword segment_handle, uword rxf_offset,
   rxf->segment_index = fs_index;
   txf->segment_index = fs_index;
 
+  if (vcm->cfg.use_fifo_buffer) {
+      rxf->flags |= SVM_FIFO_F_LL_BUFFER;
+//      txf->flags |= SVM_FIFO_F_LL_BUFFER;
+  }
+
   if (!is_ct && mq_offset != (uword) ~0)
     {
       fs = fifo_segment_get_segment (&vcm->segment_main, eqs_index);
@@ -572,6 +577,27 @@ vcl_segment_attach_session (uword segment_handle, uword rxf_offset,
 }
 
 void
+vcl_session_try_recycle_buffer (vcl_session_t *s, int is_free) {
+    vcl_worker_t *wrk;
+    session_event_t *e;
+
+    wrk = vcl_worker_get_current();
+    
+    if (is_free)
+        return vcl_send_session_recycle_buffer(wrk, s, 1);
+
+    if (vec_len(s->rx_fifo->free_buffers) && 
+            ~(s->flags & VCL_SESSION_F_PENDING_RECYCLE_BUFFER)) 
+    {
+        s->flags |= VCL_SESSION_F_PENDING_RECYCLE_BUFFER;
+        vec_add2(wrk->unhandled_evts_vector, e, 1);
+        e->event_type = SESSION_CTRL_EVT_RECYCLE_BUFFER;
+        e->postponed = 1;
+        e->session_index = s->session_index;
+    }
+}
+
+void
 vcl_session_detach_fifos (vcl_session_t *s)
 {
   fifo_segment_t *fs;
@@ -586,6 +612,7 @@ vcl_session_detach_fifos (vcl_session_t *s)
   if (!fs)
     goto done;
 
+  vcl_session_try_recycle_buffer(s, 1);
   fifo_segment_free_client_fifo (fs, s->rx_fifo);
   fifo_segment_free_client_fifo (fs, s->tx_fifo);
   if (s->ct_rx_fifo)

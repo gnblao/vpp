@@ -233,6 +233,7 @@ typedef enum
   _ (USE_LOCAL_SCOPE, "App can use local session scope")                      \
   _ (EVT_MQ_USE_EVENTFD, "Use eventfds for signaling")                        \
   _ (MEMFD_FOR_BUILTIN, "Use memfd for builtin app segs")                     \
+  _ (USE_FIFO_BUFFER, "Use buffer index in fifo rx/tx")                     \
   _ (USE_HUGE_PAGE, "Use huge page for FIFO")
 
 typedef enum _app_options
@@ -450,6 +451,15 @@ typedef struct session_shutdown_msg_
   u32 context;
   session_handle_t handle;
 } __clib_packed session_shutdown_msg_t;
+
+typedef struct session_recycle_buffer_msg_
+{
+  u32 client_index;
+  u32 context;
+  session_handle_t handle;
+  u32 n_buffers;
+  u32 buffers[SESSION_CTRL_MSG_MAX_SIZE/sizeof(u32) - 5];
+} __clib_packed session_recycle_buffer_msg_t;
 
 typedef struct session_disconnect_msg_
 {
@@ -768,21 +778,48 @@ app_recv_dgram (app_session_t * s, u8 * buf, u32 len)
 }
 
 always_inline int
-app_recv_stream_raw (svm_fifo_t * f, u8 * buf, u32 len, u8 clear_evt, u8 peek)
+app_recv_stream_raw (svm_fifo_t * f, u8 * buf, u32 len, u8 clear_evt, u32 peek)
 {
   if (clear_evt)
     svm_fifo_unset_event (f);
 
   if (peek)
-    return svm_fifo_peek (f, 0, len, buf);
+    return svm_fifo_peek (f, peek, len, buf);
 
   return svm_fifo_dequeue (f, len, buf);
 }
 
 always_inline int
-app_recv_stream (app_session_t * s, u8 * buf, u32 len)
+app_recv_stream_raw_w_buffer (svm_fifo_t * f, u8 * buf, u32 len, u8 clear_evt, u32 peek)
 {
-  return app_recv_stream_raw (s->rx_fifo, buf, len, 1, 0);
+  if (clear_evt)
+    svm_fifo_unset_event (f);
+
+  ASSERT (f->flags & SVM_FIFO_F_LL_BUFFER);
+
+  if (peek)
+    return svm_fifo_peek_w_buffer (f, peek, len, buf);
+
+  return svm_fifo_dequeue_w_buffer (f, len, buf);
+}
+
+always_inline int
+app_recv_stream_fifo_raw (svm_fifo_t *f, u8 * buf, u32 len, u8 clear_evt, u32 peek)
+{
+  if (f->flags & SVM_FIFO_F_LL_BUFFER)
+      return app_recv_stream_raw_w_buffer (f, buf, len, clear_evt, peek);
+  
+  return app_recv_stream_raw_w_buffer(f, buf, len, clear_evt, peek);
+}
+
+
+always_inline int
+app_recv_stream (app_session_t * s, u8 * buf, u32 len, u32 peek)
+{
+  if (s->rx_fifo->flags & SVM_FIFO_F_LL_BUFFER)
+      return app_recv_stream_raw_w_buffer (s->rx_fifo, buf, len, 0, peek);
+  
+  return app_recv_stream_raw (s->rx_fifo, buf, len, 0, peek);
 }
 
 always_inline int
@@ -790,7 +827,7 @@ app_recv (app_session_t * s, u8 * data, u32 len)
 {
   if (s->is_dgram)
     return app_recv_dgram (s, data, len);
-  return app_recv_stream (s, data, len);
+  return app_recv_stream (s, data, len, 0);
 }
 
 /* *INDENT-OFF* */
@@ -849,6 +886,10 @@ typedef struct app_sapi_attach_reply_msg_
   u8 vpp_ctrl_mq_thread;
   u8 n_fds;
   u8 fd_flags;
+  u8 n_buffer_fds;
+  uword buffer_mem_start;
+  u32 buffer_data_size;
+  u16 buffer_ext_hdr_size;
 } __clib_packed app_sapi_attach_reply_msg_t;
 
 typedef struct app_sapi_worker_add_del_msg_

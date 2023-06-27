@@ -847,10 +847,15 @@ segment_manager_alloc_session_fifos (segment_manager_t * sm,
    * to allocate new segment
    */
   if (PREDICT_FALSE (rv < 0))
-    return sm_lock_and_alloc_segment_and_fifos (sm, props, thread_index,
+    rv = sm_lock_and_alloc_segment_and_fifos (sm, props, thread_index,
 						rx_fifo, tx_fifo);
 
-  return 0;
+  if (rv == 0 && props->use_fifo_buffer) {
+    (*rx_fifo)->flags = SVM_FIFO_F_LL_BUFFER;
+//    (*tx_fifo)->flags = SVM_FIFO_F_LL_BUFFER;
+  }
+  
+  return rv;
 }
 
 void

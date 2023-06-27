@@ -410,6 +410,7 @@ clib_mem_get_default_hugepage_size (void)
 
 int clib_mem_vm_create_fd (clib_mem_page_sz_t log2_page_size, char *fmt, ...);
 uword clib_mem_get_fd_page_size (int fd);
+uword clib_mem_get_fd_size (int fd);
 clib_mem_page_sz_t clib_mem_get_fd_log2_page_size (int fd);
 uword clib_mem_vm_reserve (uword start, uword size,
 			   clib_mem_page_sz_t log2_page_sz);

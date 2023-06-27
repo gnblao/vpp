@@ -39,7 +39,7 @@
 
 #include <vlib/vlib.h>
 #include <vlib/threads.h>
-#include <vnet/classify/vnet_classify.h>
+//#include <vnet/classify/vnet_classify.h>
 
 u8 *vnet_trace_placeholder;
 
@@ -463,7 +463,8 @@ cli_add_trace_buffer (vlib_main_t * vm,
       goto done;
     }
 
-  u32 filter_table = classify_get_trace_chain ();
+  //u32 filter_table = classify_get_trace_chain ();
+  u32 filter_table = vlib_global_main.trace_filter.classify_table_index;
   if (filter && filter_table == ~0)
     {
       error = clib_error_create ("No packet trace filter configured...");

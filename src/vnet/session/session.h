@@ -364,6 +364,9 @@ session_evt_alloc_old (session_worker_t * wrk)
   return elt;
 }
 
+void
+session_evt_add_to_list (session_worker_t * wrk, session_event_t * evt);
+
 int session_wrk_handle_mq (session_worker_t *wrk, svm_msg_q_t *mq);
 
 session_t *session_alloc (u32 thread_index);

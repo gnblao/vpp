@@ -452,6 +452,12 @@ vppcom_cfg_read_file (char *conf_fname)
 	      VCFG_DBG (0, "VCL<%d>: configured with mq with eventfd",
 			getpid ());
 	    }
+          else if (unformat (line_input, "use-fifo-buffer"))
+	    {
+	      vcl_cfg->use_fifo_buffer = 1;
+	      VCFG_DBG (0, "VCL<%d>: configured with fifo with buffer",
+			getpid ());
+	    }
 	  else if (unformat (line_input, "tls-engine %u",
 			     &vcl_cfg->tls_engine))
 	    {

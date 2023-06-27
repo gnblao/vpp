@@ -32,7 +32,8 @@ typedef struct _segment_manager_props
   uword add_segment_size;		/**< additional segment size */
   u8 add_segment:1;			/**< can add new segments flag */
   u8 use_mq_eventfd:1;			/**< use eventfds for mqs flag */
-  u8 reserved:6;			/**< reserved flags */
+  u8 use_fifo_buffer:1;			/**< use eventfds for mqs flag */
+  u8 reserved:5;			/**< reserved flags */
   u8 n_slices;				/**< number of fs slices/threads */
   ssvm_segment_type_t segment_type;	/**< seg type: if set to SSVM_N_TYPES,
 					     private segments are used */

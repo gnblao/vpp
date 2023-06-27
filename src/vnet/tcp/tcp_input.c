@@ -1398,7 +1398,7 @@ tcp46_established_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
   tcp_worker_ctx_t *wrk = tcp_get_worker (thread_index);
   vlib_buffer_t *bufs[VLIB_FRAME_SIZE], **b;
   u16 err_counters[TCP_N_ERROR] = { 0 };
-  u32 n_left_from, *from;
+  u32 n_left_from, *from, *to_free=0;
 
   if (node->flags & VLIB_NODE_FLAG_TRACE)
     tcp_established_trace_frame (vm, node, frame, is_ip4);
@@ -1448,8 +1448,10 @@ tcp46_established_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
       /* 6: check the URG bit TODO */
 
       /* 7: process the segment text */
-      if (vnet_buffer (b[0])->tcp.data_len)
+      if (vnet_buffer (b[0])->tcp.data_len) 
 	error = tcp_segment_rcv (wrk, tc, b[0]);
+      else 
+        vec_add1(to_free, vlib_get_buffer_index(vlib_get_main(), b[0]));
 
       /* 8: check the FIN bit */
       if (PREDICT_FALSE (tcp_is_fin (th)))
@@ -1468,8 +1470,10 @@ tcp46_established_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
   tcp_store_err_counters (established, err_counters);
   tcp_handle_postponed_dequeues (wrk);
   tcp_handle_disconnects (wrk);
-  vlib_buffer_free (vm, from, frame->n_vectors);
-
+  //vlib_buffer_free (vm, from, frame->n_vectors);
+  vlib_buffer_free (vm, to_free, vec_len(to_free));
+  vec_free(to_free);
+  
   return frame->n_vectors;
 }
 

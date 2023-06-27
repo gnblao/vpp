@@ -152,7 +152,7 @@ ooo_segment_free (svm_fifo_t * f, u32 index)
 {
   ooo_segment_t *cur, *prev = 0, *next = 0;
   cur = pool_elt_at_index (f->ooo_segments, index);
-
+    
   if (cur->next != OOO_SEGMENT_INVALID_INDEX)
     {
       next = pool_elt_at_index (f->ooo_segments, cur->next);
@@ -176,7 +176,7 @@ ooo_segment_free (svm_fifo_t * f, u32 index)
  * Add segment to fifo's out-of-order segment list. Takes care of merging
  * adjacent segments and removing overlapping ones.
  */
-static void
+void
 ooo_segment_add (svm_fifo_t * f, u32 offset, u32 head, u32 tail, u32 length)
 {
   ooo_segment_t *s, *new_s, *prev, *next, *it;
@@ -306,11 +306,12 @@ check_tail:
  * Removes segments that can now be enqueued because the fifo's tail has
  * advanced. Returns the number of bytes added to tail.
  */
-static int
+int
 ooo_segment_try_collect (svm_fifo_t * f, u32 n_bytes_enqueued, u32 * tail)
 {
   u32 s_index, bytes = 0;
   ooo_segment_t *s;
+  svm_fifo_buffer_seg_t b_seg_, *b_seg = &b_seg_;
   i32 diff;
 
   s = pool_elt_at_index (f->ooo_segments, f->ooos_list_head);
@@ -325,6 +326,16 @@ ooo_segment_try_collect (svm_fifo_t * f, u32 n_bytes_enqueued, u32 * tail)
   while (0 <= diff && diff < n_bytes_enqueued)
     {
       s_index = s - f->ooo_segments;
+    
+      if (f->flags == SVM_FIFO_F_LL_BUFFER) {
+          clib_memset(b_seg, 0, sizeof (*b_seg));
+          b_seg->bi = s->bi;
+          b_seg->start = s->start;
+          b_seg->length = s->length;
+          clib_warning("buffer_index:%d", b_seg->bi);
+
+          svm_fifo_enqueue(f, sizeof( * b_seg), (u8* ) b_seg);
+      }
 
       /* Segment end is beyond the tail. Advance tail and remove segment */
       if (s->length > diff)

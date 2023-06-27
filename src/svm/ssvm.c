@@ -293,6 +293,52 @@ ssvm_server_init_memfd (ssvm_private_t * memfd)
  * a usable file descriptor for the memfd segment e.g. via
  * vppinfra/socket.c:default_socket_recvmsg
  */
+int ssvm_client_init_buffers_memfd (ssvm_private_t * memfd)
+{
+  int mmap_flags = MAP_SHARED;
+
+  memfd->ssvm_size = clib_mem_get_fd_size (memfd->fd);
+  if (!memfd->ssvm_size)
+    {
+      clib_unix_warning ("page size unknown");
+      return SSVM_API_ERROR_MMAP;
+    }
+
+  memfd->log2_page_size = clib_mem_get_fd_log2_page_size (memfd->fd);
+  if (!memfd->log2_page_size)
+    {
+      clib_unix_warning ("page size unknown");
+      return SSVM_API_ERROR_MMAP;
+    }
+
+  if (memfd->requested_va)
+    mmap_flags |= MAP_FIXED;
+
+  /*
+   * Remap the segment at the 'right' address
+   */
+  memfd->sh = (void *) mmap (uword_to_pointer (memfd->requested_va, void *),
+		      memfd->ssvm_size,
+		      PROT_READ | PROT_WRITE, mmap_flags, memfd->fd, 0);
+
+  if (memfd->sh == MAP_FAILED)
+    {
+      clib_unix_warning ("client final mmap");
+      close (memfd->fd);
+      return SSVM_API_ERROR_MMAP;
+    }
+
+  return 0;
+}
+
+
+/**
+ * Initialize memfd segment client
+ *
+ * Subtly different than svm_client_init. The caller needs to acquire
+ * a usable file descriptor for the memfd segment e.g. via
+ * vppinfra/socket.c:default_socket_recvmsg
+ */
 int
 ssvm_client_init_memfd (ssvm_private_t * memfd)
 {

@@ -77,6 +77,7 @@ typedef u32 vlib_log_class_t;
 #include <vlib/trace_funcs.h>
 #include <vlib/global_funcs.h>
 #include <vlib/buffer_node.h>
+#include <vlib/svm_extend.h>
 
 #endif /* included_vlib_h */
 

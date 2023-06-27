@@ -263,9 +263,64 @@ session_cleanup_notify (session_t * s, session_cleanup_ntf_t ntf)
 }
 
 void
+session_free_w_fifos_try_ooo_recycle_buffer (session_t * s)
+{
+    svm_fifo_t *f;
+    u32 len, nb;
+    u32 nb_max;
+    u32 *free_buffers = 0;
+    ooo_segment_t *os = NULL;
+
+    u8 buf[sizeof(session_event_t) + sizeof(session_recycle_buffer_msg_t)];
+    session_event_t *evt = (session_event_t *)&buf;
+    session_recycle_buffer_msg_t *mp = (session_recycle_buffer_msg_t *)&evt->data[0]; 
+
+    evt->event_type = SESSION_CTRL_EVT_RECYCLE_BUFFER;
+
+    nb_max = SESSION_CTRL_MSG_MAX_SIZE/sizeof(u32) - 5;
+    nb_max = clib_max(nb_max-1, 1);
+    
+    f = s->rx_fifo;
+    if (f && (f->flags & SVM_FIFO_F_LL_BUFFER))
+    {
+      if (f->ooos_list_head != OOO_SEGMENT_INVALID_INDEX)
+	os = svm_fifo_first_ooo_segment (f);
+
+      while (os)
+	{
+	  vec_add1 (free_buffers, os->bi);
+
+	  if (os->next == OOO_SEGMENT_INVALID_INDEX)
+	    break;
+
+	  os = pool_elt_at_index (f->ooo_segments, os->next);
+	}
+
+      while ((len = vec_len (free_buffers)))
+	{
+	  clib_memset (mp, 0, sizeof (*mp));
+
+	  nb = clib_min (nb_max, len);
+	  vlib_buffer_copy_indices (mp->buffers, free_buffers, nb);
+	  mp->n_buffers = nb;
+	  mp->handle = session_handle (s);
+
+	  vec_delete (free_buffers, nb, 0);
+	  len -= nb;
+
+	  session_evt_add_to_list (session_main_get_worker (s->thread_index),
+				   evt);
+	}
+
+      vec_free (free_buffers);
+    }
+}
+
+void
 session_free_w_fifos (session_t * s)
 {
   session_cleanup_notify (s, SESSION_CLEANUP_SESSION);
+  session_free_w_fifos_try_ooo_recycle_buffer(s);
   segment_manager_dealloc_fifos (s->rx_fifo, s->tx_fifo);
   session_free (s);
 }
@@ -583,27 +638,37 @@ session_enqueue_stream_connection (transport_connection_t * tc,
 
   if (is_in_order)
     {
-      enqueued = svm_fifo_enqueue (s->rx_fifo,
-				   b->current_length,
-				   vlib_buffer_get_current (b));
-      if (PREDICT_FALSE ((b->flags & VLIB_BUFFER_NEXT_PRESENT)
-			 && enqueued >= 0))
+      if (s->rx_fifo->flags == SVM_FIFO_F_LL_BUFFER)
+	enqueued = svm_fifo_enqueue_w_buffer (s->rx_fifo, b);
+      else
 	{
-	  in_order_off = enqueued > b->current_length ? enqueued : 0;
-	  rv = session_enqueue_chain_tail (s, b, in_order_off, 1);
-	  if (rv > 0)
-	    enqueued += rv;
+	  enqueued = svm_fifo_enqueue (s->rx_fifo, b->current_length,
+				       vlib_buffer_get_current (b));
+	  if (PREDICT_FALSE ((b->flags & VLIB_BUFFER_NEXT_PRESENT) &&
+			     enqueued >= 0))
+	    {
+	      in_order_off = enqueued > b->current_length ? enqueued : 0;
+	      rv = session_enqueue_chain_tail (s, b, in_order_off, 1);
+	      if (rv > 0)
+		enqueued += rv;
+	    }
 	}
     }
   else
     {
-      rv = svm_fifo_enqueue_with_offset (s->rx_fifo, offset,
-					 b->current_length,
-					 vlib_buffer_get_current (b));
-      if (PREDICT_FALSE ((b->flags & VLIB_BUFFER_NEXT_PRESENT) && !rv))
-	session_enqueue_chain_tail (s, b, offset + b->current_length, 0);
-      /* if something was enqueued, report even this as success for ooo
-       * segment handling */
+      if (s->rx_fifo->flags == SVM_FIFO_F_LL_BUFFER)
+	rv = svm_fifo_enqueue_w_buffer_with_offset (s->rx_fifo, offset, b);
+      else
+	{
+	  rv = svm_fifo_enqueue_with_offset (s->rx_fifo, offset,
+					     b->current_length,
+					     vlib_buffer_get_current (b));
+	  if (PREDICT_FALSE ((b->flags & VLIB_BUFFER_NEXT_PRESENT) && !rv))
+	    session_enqueue_chain_tail (s, b, offset + b->current_length, 0);
+	  /* if something was enqueued, report even this as success for ooo
+	   * segment handling */
+	}
+
       return rv;
     }
 

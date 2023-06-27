@@ -171,6 +171,81 @@ vcl_send_session_disconnect (vcl_worker_t * wrk, vcl_session_t * s)
   app_send_ctrl_evt_to_vpp (mq, app_evt);
 }
 
+static u8 *
+format_session_recycle_buffer_msg (u8 * s, va_list * va)
+{
+  session_recycle_buffer_msg_t *mp;
+  mp = va_arg (*va, void *);
+
+  s = format(s, "mp->n_buffers:%u", mp->n_buffers);
+  s = format(s, " mp->buffers:");
+
+  uword i;
+  for (i = 0; i < mp->n_buffers; i++)
+    {
+      if (i > 0)
+	s = format (s, ", ");
+      s = format (s, "%u", mp->buffers[i]);
+    }
+  return s;
+}
+
+void
+vcl_send_session_recycle_buffer (vcl_worker_t * wrk, vcl_session_t * s, int is_free)
+{
+  app_session_evt_t _app_evt, *app_evt = &_app_evt;
+  session_recycle_buffer_msg_t *mp;
+  svm_msg_q_t *mq;
+
+  vlib_main_t *vm = vlib_get_first_main();
+
+  u32 len, nb=0;
+  u32 nb_max;
+  
+  nb_max = SESSION_CTRL_MSG_MAX_SIZE/sizeof(u32) - 5;
+  nb_max = clib_max(nb_max-1, 1);
+  /* Send to thread that owns the session */
+  mq = s->vpp_evt_q;
+
+  if (is_free) {
+      if (s->rx_fifo->cache_buffer)
+          vec_add1 (s->rx_fifo->free_buffers, vlib_get_buffer_index(vm, s->rx_fifo->cache_buffer));
+
+      if (s->tx_fifo->cache_buffer)
+          vec_add1 (s->rx_fifo->free_buffers, vlib_get_buffer_index(vm, s->tx_fifo->cache_buffer));
+      
+      s->rx_fifo->cache_buffer = NULL;
+      s->tx_fifo->cache_buffer = NULL;
+  }
+
+  len = vec_len (s->rx_fifo->free_buffers);
+  while (len > 0)
+    {
+      app_alloc_ctrl_evt_to_vpp (mq, app_evt, SESSION_CTRL_EVT_RECYCLE_BUFFER);
+      mp = (session_recycle_buffer_msg_t *) app_evt->evt->data;
+      clib_memset (mp, 0, sizeof (*mp));
+      mp->client_index = wrk->api_client_handle;
+      mp->handle = s->vpp_handle;
+
+      nb = clib_min (nb_max, len);
+      vlib_buffer_copy_indices (mp->buffers, s->rx_fifo->free_buffers, nb);
+
+      mp->n_buffers = nb;
+      
+      vec_delete (s->rx_fifo->free_buffers, nb, 0);
+      len -= nb;
+    
+      VDBG (0, "%U", format_session_recycle_buffer_msg, mp);
+      app_send_ctrl_evt_to_vpp (mq, app_evt);
+    }
+
+  vec_reset_length(s->rx_fifo->free_buffers);
+  if (is_free) {
+      vec_free(s->rx_fifo->free_buffers);
+      vec_free(s->tx_fifo->free_buffers);
+  }
+}
+
 static void
 vcl_send_app_detach (vcl_worker_t * wrk)
 {
@@ -716,6 +791,23 @@ vcl_session_disconnected_handler (vcl_worker_t * wrk,
   return session;
 }
 
+static  void
+vcl_session_recycle_buffer_handler (vcl_worker_t * wrk,
+				  session_event_t * e)
+{
+  vcl_session_t *s;
+  s = vcl_session_get (wrk, e->session_index);
+
+  if (s->flags & VCL_SESSION_F_PENDING_RECYCLE_BUFFER)
+    {
+      vcl_send_session_recycle_buffer (wrk, s, 0);
+
+      s->flags &= ~VCL_SESSION_F_PENDING_RECYCLE_BUFFER;
+    }
+ 
+  return;
+}
+
 int
 vppcom_session_shutdown (uint32_t session_handle, int how)
 {
@@ -1108,6 +1200,9 @@ vcl_handle_mq_event (vcl_worker_t * wrk, session_event_t * e)
       break;
     case SESSION_CTRL_EVT_TRANSPORT_ATTR_REPLY:
       vcl_session_transport_attr_reply_handler (wrk, e->data);
+      break;
+    case SESSION_CTRL_EVT_RECYCLE_BUFFER:
+      vcl_session_recycle_buffer_handler (wrk, e);
       break;
     default:
       clib_warning ("unhandled %u", e->event_type);
@@ -2058,7 +2153,7 @@ read_again:
   if (s->is_dgram)
     rv = app_recv_dgram_raw (rx_fifo, buf, n, &s->transport, 0, peek);
   else
-    rv = app_recv_stream_raw (rx_fifo, buf, n, 0, peek);
+    rv = app_recv_stream_fifo_raw(rx_fifo, buf, n, 0, peek);
 
   ASSERT (rv >= 0);
 
@@ -2099,7 +2194,8 @@ read_again:
 
   VDBG (2, "session %u[0x%llx]: read %d bytes from (%p)", s->session_index,
 	s->vpp_handle, n_read, rx_fifo);
-
+  
+  vcl_session_try_recycle_buffer(s, 0); 
   return n_read;
 }
 
@@ -3146,7 +3242,7 @@ vcl_epoll_wait_handle_mq_event (vcl_worker_t * wrk, session_event_t * e,
 	{
 	  /* If app can distinguish between RDHUP and HUP,
 	   * we make finer control */
-	  events[*num_ev].events = EPOLLRDHUP;
+	  events[*num_ev].events = EPOLLRDHUP | EPOLLIN;
 	  if (s->flags & VCL_SESSION_F_WR_SHUTDOWN)
 	    {
 	      events[*num_ev].events |= EPOLLHUP;
@@ -3219,6 +3315,9 @@ vcl_epoll_wait_handle_mq_event (vcl_worker_t * wrk, session_event_t * e,
       break;
     case SESSION_CTRL_EVT_APP_WRK_RPC:
       vcl_worker_rpc_handler (wrk, e->data);
+      break;
+    case SESSION_CTRL_EVT_RECYCLE_BUFFER:
+      vcl_session_recycle_buffer_handler (wrk, e);
       break;
     default:
       VDBG (0, "unhandled: %u", e->event_type);

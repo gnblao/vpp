@@ -16,6 +16,7 @@
  * global_funcs.h: global data structure access functions
  */
 
+
 #ifndef included_vlib_global_funcs_h_
 #define included_vlib_global_funcs_h_
 

@@ -179,7 +179,7 @@ os_panic (void)
 
 void os_exit (int) __attribute__ ((weak));
 
-void
+__clib_export void
 os_exit (int code)
 {
   exit (code);

@@ -484,8 +484,8 @@ vlib_buffer_alloc_size (uword ext_hdr_size, uword data_size)
 }
 
 u8
-vlib_buffer_pool_create (vlib_main_t * vm, char *name, u32 data_size,
-			 u32 physmem_map_index)
+vlib_buffer_pool_create_internal (vlib_main_t * vm, char *name, u32 data_size,
+			 u32 physmem_map_index, int is_map)
 {
   vlib_buffer_main_t *bm = vm->buffer_main;
   vlib_buffer_pool_t *bp;
@@ -565,7 +565,9 @@ vlib_buffer_pool_create (vlib_main_t * vm, char *name, u32 data_size,
 	if (p == m->base)
 	  continue;
 
-	vlib_buffer_copy_template ((vlib_buffer_t *) p, &bp->buffer_template);
+	if (!is_map)
+	  vlib_buffer_copy_template ((vlib_buffer_t *) p,
+				     &bp->buffer_template);
 
 	bi = vlib_get_buffer_index (vm, (vlib_buffer_t *) p);
 
@@ -575,6 +577,24 @@ vlib_buffer_pool_create (vlib_main_t * vm, char *name, u32 data_size,
       }
 
   return bp->index;
+}
+
+u8
+vlib_buffer_pool_create (vlib_main_t * vm, char *name, u32 data_size,
+			 u32 physmem_map_index)
+{
+    return vlib_buffer_pool_create_internal(vm, name, data_size, physmem_map_index, 0);
+}
+
+/*
+ * use only in vcl
+ */
+
+u8
+vlib_buffer_pool_create_fake (vlib_main_t * vm, char *name, u32 data_size,
+			 u32 physmem_map_index)
+{
+    return vlib_buffer_pool_create_internal(vm, name, data_size, physmem_map_index, 1);
 }
 
 static u8 *

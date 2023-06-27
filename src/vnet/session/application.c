@@ -831,6 +831,8 @@ application_alloc_and_init (app_init_args_t * a)
     props->evt_q_size = opts[APP_OPTIONS_EVT_QUEUE_SIZE];
   if (opts[APP_OPTIONS_FLAGS] & APP_OPTIONS_FLAGS_EVT_MQ_USE_EVENTFD)
     props->use_mq_eventfd = 1;
+  if (opts[APP_OPTIONS_FLAGS] & APP_OPTIONS_FLAGS_USE_FIFO_BUFFER)
+    props->use_fifo_buffer = 1;
   if (opts[APP_OPTIONS_TLS_ENGINE])
     app->tls_engine = opts[APP_OPTIONS_TLS_ENGINE];
   if (opts[APP_OPTIONS_MAX_FIFO_SIZE])

@@ -173,7 +173,7 @@ receive_data_chunk (ec_worker_t *wrk, ec_session_t *es)
     {
       if (!ecm->is_dgram)
 	n_read =
-	  app_recv_stream (&es->data, wrk->rx_buf, vec_len (wrk->rx_buf));
+	  app_recv_stream (&es->data, wrk->rx_buf, vec_len (wrk->rx_buf), 0);
       else
 	n_read =
 	  app_recv_dgram (&es->data, wrk->rx_buf, vec_len (wrk->rx_buf));

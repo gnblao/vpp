@@ -16,6 +16,7 @@
 #ifndef SRC_VCL_VCL_PRIVATE_H_
 #define SRC_VCL_VCL_PRIVATE_H_
 
+#include <vlib/vlib.h>
 #include <vnet/session/application_interface.h>
 #include <vcl/vppcom.h>
 #include <vcl/vcl_debug.h>
@@ -143,6 +144,7 @@ typedef enum vcl_session_flags_
   VCL_SESSION_F_PENDING_DISCONNECT = 1 << 6,
   VCL_SESSION_F_PENDING_FREE = 1 << 7,
   VCL_SESSION_F_PENDING_LISTEN = 1 << 8,
+  VCL_SESSION_F_PENDING_RECYCLE_BUFFER = 1 << 9,
 } __clib_packed vcl_session_flags_t;
 
 typedef struct vcl_session_
@@ -200,6 +202,7 @@ typedef struct vppcom_cfg_t_
   u8 *namespace_id;
   u64 namespace_secret;
   u8 use_mq_eventfd;
+  u8 use_fifo_buffer;
   f64 app_timeout;
   f64 session_timeout;
   char *event_log_path;
@@ -358,6 +361,8 @@ typedef struct vppcom_main_t_
   svm_msg_q_t *ctrl_mq;
 
   fifo_segment_main_t segment_main;
+
+  vlib_main_t *fake_vm;
 
   vcl_rpc_fn_t *wrk_rpc_fn;
 
@@ -751,6 +756,9 @@ void vcl_segment_detach (u64 segment_handle);
 void vcl_segment_detach_segments (u32 *seg_indices);
 void vcl_send_session_listen (vcl_worker_t *wrk, vcl_session_t *s);
 void vcl_send_session_unlisten (vcl_worker_t * wrk, vcl_session_t * s);
+
+void vcl_session_try_recycle_buffer (vcl_session_t * s, int is_free);
+void vcl_send_session_recycle_buffer (vcl_worker_t * wrk, vcl_session_t * s, int is_free);
 
 int vcl_segment_attach_session (uword segment_handle, uword rxf_offset,
 				uword txf_offset, uword mq_offset,

@@ -160,6 +160,16 @@ clib_mem_get_fd_page_size (int fd)
   return st.st_blksize;
 }
 
+__clib_export u64
+clib_mem_get_fd_size (int fd)
+{
+  struct stat st = { 0 };
+  if (fstat (fd, &st) == -1)
+    return 0;
+  return st.st_size;
+}
+
+
 __clib_export clib_mem_page_sz_t
 clib_mem_get_fd_log2_page_size (int fd)
 {

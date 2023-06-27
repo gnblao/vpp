@@ -40,6 +40,7 @@ typedef enum svm_fifo_deq_ntf_
 typedef enum svm_fifo_flag_
 {
   SVM_FIFO_F_LL_TRACKED = 1 << 0,
+  SVM_FIFO_F_LL_BUFFER = 1 << 1,
 } svm_fifo_flag_t;
 
 typedef enum
@@ -54,6 +55,15 @@ typedef struct svm_fifo_seg_
   u8 *data;
   u32 len;
 } svm_fifo_seg_t;
+
+typedef struct svm_fifo_buffer_seg_
+{
+
+  u32 start;	/**< Start of segment, normalized*/
+  u32 length;	/**< Length of segment */
+  u32 bi;	/**< buffer index */
+} svm_fifo_buffer_seg_t;
+
 
 #if SVM_FIFO_TRACE
 #define svm_fifo_trace_add(_f, _s, _l, _t)		\
@@ -85,6 +95,16 @@ f_load_head_tail_cons (svm_fifo_t * f, u32 * head, u32 * tail)
   *tail = clib_atomic_load_acq_n (&f->shr->tail);
 }
 
+static inline void
+f_load_head2_tail2_cons (svm_fifo_t * f, u32 * head, u32 * tail)
+{
+  /* load-relaxed: consumer owned index */
+  *head = f->shr->head2;
+  /* load-acq: consumer foreign index (paired with store-rel in producer) */
+  *tail = clib_atomic_load_acq_n (&f->shr->tail2);
+}
+
+
 /** Load head and tail optimized for producer
  *
  * Internal function
@@ -98,6 +118,16 @@ f_load_head_tail_prod (svm_fifo_t * f, u32 * head, u32 * tail)
   *head = clib_atomic_load_acq_n (&f->shr->head);
 }
 
+static inline void
+f_load_head2_tail2_prod (svm_fifo_t * f, u32 * head, u32 * tail)
+{
+  /* load relaxed: producer owned index */
+  *tail = f->shr->tail2;
+  /* load-acq: producer foreign index (paired with store-rel in consumer) */
+  *head = clib_atomic_load_acq_n (&f->shr->head2);
+}
+
+
 /**
  * Load head and tail independent of producer/consumer role
  *
@@ -110,6 +140,15 @@ f_load_head_tail_all_acq (svm_fifo_t * f, u32 * head, u32 * tail)
   *tail = clib_atomic_load_acq_n (&f->shr->tail);
   /* load-acq : producer foriegn index (paired with store-rel) */
   *head = clib_atomic_load_acq_n (&f->shr->head);
+}
+
+static inline void
+f_load_head2_tail2_all_acq (svm_fifo_t * f, u32 * head, u32 * tail)
+{
+  /* load-acq : consumer foreign index (paired with store-rel) */
+  *tail = clib_atomic_load_acq_n (&f->shr->tail2);
+  /* load-acq : producer foriegn index (paired with store-rel) */
+  *head = clib_atomic_load_acq_n (&f->shr->head2);
 }
 
 /**
@@ -676,6 +715,12 @@ svm_fifo_newest_ooo_segment_reset (svm_fifo_t * f)
 {
   f->ooos_newest = OOO_SEGMENT_INVALID_INDEX;
 }
+
+void
+ooo_segment_add (svm_fifo_t * f, u32 offset, u32 head, u32 tail, u32 length);
+
+int
+ooo_segment_try_collect (svm_fifo_t * f, u32 n_bytes_enqueued, u32 * tail);
 
 static inline u32
 ooo_segment_offset_prod (svm_fifo_t * f, ooo_segment_t * s)

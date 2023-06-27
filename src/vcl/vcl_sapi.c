@@ -13,6 +13,7 @@
  * limitations under the License.
  */
 
+#include <vlib/vlib.h>
 #include <vcl/vcl_private.h>
 
 static int
@@ -25,7 +26,7 @@ vcl_api_connect_app_socket (vcl_worker_t * wrk)
   cs->config = (char *) vcm->cfg.vpp_app_socket_api;
   cs->flags =
     CLIB_SOCKET_F_IS_CLIENT | CLIB_SOCKET_F_SEQPACKET | CLIB_SOCKET_F_BLOCKING;
-
+    
   wrk->vcl_needs_real_epoll = 1;
 
   if ((err = clib_socket_init (cs)))
@@ -95,11 +96,59 @@ vcl_api_attach_reply_handler (app_sapi_attach_reply_msg_t * mp, int *fds)
     }
 
   vcl_segment_discover_mqs (vcl_vpp_worker_segment_handle (0),
-			    fds + n_fds_used, mp->n_fds - n_fds_used);
+			    fds + n_fds_used, mp->n_fds - mp->n_buffer_fds - n_fds_used);
   vcl_segment_attach_mq (vcl_vpp_worker_segment_handle (0), mp->vpp_ctrl_mq,
 			 mp->vpp_ctrl_mq_thread, &wrk->ctrl_mq);
   vcm->ctrl_mq = wrk->ctrl_mq;
   vcm->app_index = mp->app_index;
+
+  if (mp->n_buffer_fds > 0)
+    {
+      u64 offest = 0;
+      vlib_physmem_map_t *map;
+      ssvm_private_t memfd_, *memfd = &memfd_;
+      u8 index, *name = 0; 
+      
+      vlib_main_init();
+      vlib_main_t *vm = vlib_get_first_main();
+
+      vcm->fake_vm = vm;
+      vlib_buffer_main_alloc (vm);
+
+      vm->buffer_main->buffer_mem_start = mp->buffer_mem_start;
+      vm->buffer_main->ext_hdr_size = mp->buffer_ext_hdr_size;
+      vm->buffer_main->default_data_size = mp->buffer_data_size;
+
+      for (int i = 0; i < mp->n_buffer_fds; i++)
+	{
+	  clib_memset (memfd, 0, sizeof (ssvm_private_t));
+	  memfd->fd = fds[mp->n_fds - mp->n_buffer_fds + i];
+	  memfd->requested_va = mp->buffer_mem_start + offest;
+	  
+          rv = ssvm_client_init_buffers_memfd (memfd);
+	  if (rv != 0) {
+              VDBG (0, "ssvm_client_init_buffers_memfd mapfd:%d rv:%d", memfd->fd, rv);
+	    goto failed;
+          }
+	  
+	  pool_get_zero (vm->physmem_main.maps, map);
+	  map->fd = memfd->fd;
+	  map->base = (void *) memfd->sh;
+          map->log2_page_size = memfd->log2_page_size;
+	  map->n_pages = (u32) ((memfd->ssvm_size - 1) >> memfd->log2_page_size) + 1;
+	  offest += memfd->ssvm_size;
+	  VDBG (0, "mapfd:%d", memfd->fd);
+
+	  name = format (name, "default-numa-%d%c", map->numa_node, 0);
+	  index = vlib_buffer_pool_create_fake (
+	    vm, (char *) name, vlib_buffer_get_default_data_size (vm),
+	    map - vm->physmem_main.maps);
+
+	  if (index == (u8) ~0)
+              VDBG (0, "maximum number of buffer pools reached");
+	  vec_free (name);
+	}
+    }
 
   return 0;
 
@@ -130,6 +179,7 @@ vcl_api_send_attach (clib_socket_t * cs)
     (vcm->cfg.app_scope_global ? APP_OPTIONS_FLAGS_USE_GLOBAL_SCOPE : 0) |
     (app_is_proxy ? APP_OPTIONS_FLAGS_IS_PROXY : 0) |
     (vcm->cfg.use_mq_eventfd ? APP_OPTIONS_FLAGS_EVT_MQ_USE_EVENTFD : 0) |
+    (vcm->cfg.use_fifo_buffer ? APP_OPTIONS_FLAGS_USE_FIFO_BUFFER : 0) |
     (vcm->cfg.huge_page ? APP_OPTIONS_FLAGS_USE_HUGE_PAGE : 0);
   mp->options[APP_OPTIONS_PROXY_TRANSPORT] =
     (u64) ((vcm->cfg.app_proxy_transport_tcp ? 1 << TRANSPORT_PROTO_TCP : 0) |
@@ -167,12 +217,14 @@ vcl_sapi_attach (void)
    * Init client socket and send attach
    */
   if (vcl_api_connect_app_socket (wrk))
-    return -1;
-
+    {
+      return -1;
+    }
   cs = &wrk->app_api_sock;
   if (vcl_api_send_attach (cs))
-    return -1;
-
+    {
+      return -1;
+    }
   /*
    * Wait for attach reply
    */
@@ -184,7 +236,9 @@ vcl_sapi_attach (void)
     }
 
   if (rmp->type != APP_SAPI_MSG_TYPE_ATTACH_REPLY)
-    return -1;
+    {
+      return -1;
+    }
 
   return vcl_api_attach_reply_handler (&rmp->attach_reply, fds);
 }

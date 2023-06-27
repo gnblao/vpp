@@ -1291,6 +1291,25 @@ session_api_attach_handler (app_namespace_t * app_ns, clib_socket_t * cs,
 	}
     }
 
+  int n_buffer_fds = 0;
+  vlib_main_t *vm = vlib_get_main ();
+  if (vm)
+    {
+      vlib_physmem_map_t *m;
+      vlib_buffer_pool_t *bp;
+
+      vec_foreach (bp, vm->buffer_main->buffer_pools)
+	{
+	  m = vlib_physmem_get_map (vm, bp->physmem_map_index);
+	  if (m->fd > 0)
+	    {
+	      fds[n_fds] = m->fd;
+	      n_fds += 1;
+	      n_buffer_fds += 1;
+	    }
+	}
+    }
+
 done:
 
   msg.type = APP_SAPI_MSG_TYPE_ATTACH_REPLY;
@@ -1305,6 +1324,12 @@ done:
       rmp->vpp_ctrl_mq = fifo_segment_msg_q_offset (rx_mqs_seg, ctrl_thread);
       rmp->vpp_ctrl_mq_thread = ctrl_thread;
       rmp->n_fds = n_fds;
+      
+      rmp->n_buffer_fds = n_buffer_fds;
+      rmp->buffer_mem_start = vm->buffer_main->buffer_mem_start;
+      rmp->buffer_ext_hdr_size = vm->buffer_main->ext_hdr_size;
+      rmp->buffer_data_size = vm->buffer_main->default_data_size;
+      
       rmp->fd_flags = fd_flags;
       /* No segment name and size since we only support memfds
        * in this configuration */

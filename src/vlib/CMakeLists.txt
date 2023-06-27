@@ -98,6 +98,7 @@ add_vpp_library(vlib
   threads_cli.c
   time.c
   trace.c
+  svm_extend.c
   unix/cli.c
   unix/input.c
   unix/main.c
@@ -145,6 +146,7 @@ add_vpp_library(vlib
   time.h
   trace_funcs.h
   trace.h
+  svm_extend.h
   unix/mc_socket.h
   unix/plugin.h
   unix/unix.h
