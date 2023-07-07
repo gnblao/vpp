@@ -79,6 +79,7 @@ DEB_DEPENDS += libelf-dev libpcap-dev # for libxdp (af_xdp)
 DEB_DEPENDS += iperf3 # for 'make test TEST=vcl'
 DEB_DEPENDS += nasm
 DEB_DEPENDS += iperf ethtool  # for 'make test TEST=vm_vpp_interfaces'
+DEB_DEPENDS += libpcap-dev
 
 LIBFFI=libffi6 # works on all but 20.04 and debian-testing
 
@@ -176,6 +177,7 @@ RPM_SUSE_BUILDTOOLS_DEPS += clang cmake indent libtool make ninja python3-ply
 
 RPM_SUSE_DEVEL_DEPS = glibc-devel-static libnuma-devel libelf-devel
 RPM_SUSE_DEVEL_DEPS += libopenssl-devel libuuid-devel lsb-release
+RPM_SUSE_DEVEL_DEPS += libpcap-devel llvm-devel
 RPM_SUSE_DEVEL_DEPS += curl libstdc++-devel bison gcc-c++ zlib-devel
 
 RPM_SUSE_PYTHON_DEPS = python3-devel python3-pip python3-rpm-macros
