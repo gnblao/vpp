@@ -174,6 +174,7 @@ typedef enum
   _ (UNIDIRECTIONAL, "unidirectional")                                        \
   _ (CUSTOM_FIFO_TUNING, "custom-fifo-tuning")                                \
   _ (HALF_OPEN, "half-open")                                                  \
+  _ (USE_BUFFER, "use-buffer")                                                \
   _ (APP_CLOSED, "app-closed")
 
 typedef enum session_flags_bits_

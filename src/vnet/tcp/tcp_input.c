@@ -1405,6 +1405,9 @@ tcp46_established_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 
   from = vlib_frame_vector_args (frame);
   n_left_from = frame->n_vectors;
+  
+  to_free = vec_new (u32, frame->n_vectors);
+  vec_copy (to_free, from);
 
   vlib_get_buffers (vm, from, bufs, n_left_from);
   b = bufs;
@@ -1448,10 +1451,12 @@ tcp46_established_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
       /* 6: check the URG bit TODO */
 
       /* 7: process the segment text */
-      if (vnet_buffer (b[0])->tcp.data_len) 
+      if (vnet_buffer (b[0])->tcp.data_len) { 
 	error = tcp_segment_rcv (wrk, tc, b[0]);
-      else 
-        vec_add1(to_free, vlib_get_buffer_index(vlib_get_main(), b[0]));
+        if (tc->connection.flags & TRANSPORT_CONNECTION_F_USE_BUFFER) {
+            vec_del1 (to_free, vec_search (to_free, from[frame->n_vectors - n_left_from]));
+        }
+      } 
 
       /* 8: check the FIN bit */
       if (PREDICT_FALSE (tcp_is_fin (th)))
@@ -1470,9 +1475,10 @@ tcp46_established_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
   tcp_store_err_counters (established, err_counters);
   tcp_handle_postponed_dequeues (wrk);
   tcp_handle_disconnects (wrk);
+
   //vlib_buffer_free (vm, from, frame->n_vectors);
-  vlib_buffer_free (vm, to_free, vec_len(to_free));
-  vec_free(to_free);
+  vlib_buffer_free (vm, to_free, vec_len (to_free));
+  vec_free (to_free);
   
   return frame->n_vectors;
 }
@@ -1753,9 +1759,13 @@ tcp46_syn_sent_inline (vlib_main_t *vm, vlib_node_runtime_t *node,
   u32 n_left_from, *from, thread_index = vm->thread_index, errors = 0;
   tcp_worker_ctx_t *wrk = tcp_get_worker (thread_index);
   vlib_buffer_t *bufs[VLIB_FRAME_SIZE], **b;
+  u32 *to_free=0;
 
   from = vlib_frame_vector_args (frame);
   n_left_from = frame->n_vectors;
+  
+  to_free = vec_new(u32, frame->n_vectors);
+  vec_copy(to_free, from);
 
   if (PREDICT_FALSE (node->flags & VLIB_NODE_FLAG_TRACE))
     tcp46_syn_sent_trace_frame (vm, node, from, n_left_from);
@@ -1961,7 +1971,10 @@ tcp46_syn_sent_inline (vlib_main_t *vm, vlib_node_runtime_t *node,
 	{
 	  clib_warning ("rcvd data in syn-sent");
 	  error = tcp_segment_rcv (wrk, new_tc, b[0]);
-	  if (error == TCP_ERROR_ACK_OK)
+          if (tc->connection.flags & TRANSPORT_CONNECTION_F_USE_BUFFER)
+            vec_del1(to_free, vec_search (to_free, from[frame->n_vectors - n_left_from]));
+	  
+          if (error == TCP_ERROR_ACK_OK)
 	    error = TCP_ERROR_SYN_ACKS_RCVD;
 	}
       else
@@ -1988,7 +2001,11 @@ tcp46_syn_sent_inline (vlib_main_t *vm, vlib_node_runtime_t *node,
   errors =
     session_main_flush_enqueue_events (TRANSPORT_PROTO_TCP, thread_index);
   tcp_inc_counter (syn_sent, TCP_ERROR_MSG_QUEUE_FULL, errors);
-  vlib_buffer_free (vm, from, frame->n_vectors);
+  
+  //vlib_buffer_free (vm, from, frame->n_vectors);
+  vlib_buffer_free (vm, to_free, vec_len (to_free));
+  vec_free(to_free);
+  
   tcp_handle_disconnects (wrk);
 
   return frame->n_vectors;
@@ -2065,9 +2082,13 @@ tcp46_rcv_process_inline (vlib_main_t *vm, vlib_node_runtime_t *node,
   u32 thread_index = vm->thread_index, errors, n_left_from, *from, max_deq;
   tcp_worker_ctx_t *wrk = tcp_get_worker (thread_index);
   vlib_buffer_t *bufs[VLIB_FRAME_SIZE], **b;
+  u32 *to_free=0;
 
   from = vlib_frame_vector_args (frame);
   n_left_from = frame->n_vectors;
+
+  to_free = vec_new(u32, frame->n_vectors);
+  vec_copy(to_free, from);
 
   if (PREDICT_FALSE (node->flags & VLIB_NODE_FLAG_TRACE))
     tcp46_rcv_process_trace_frame (vm, node, from, n_left_from);
@@ -2339,8 +2360,11 @@ tcp46_rcv_process_inline (vlib_main_t *vm, vlib_node_runtime_t *node,
 	case TCP_STATE_ESTABLISHED:
 	case TCP_STATE_FIN_WAIT_1:
 	case TCP_STATE_FIN_WAIT_2:
-	  if (vnet_buffer (b[0])->tcp.data_len)
+	  if (vnet_buffer (b[0])->tcp.data_len){
 	    error = tcp_segment_rcv (wrk, tc, b[0]);
+            if (tc->connection.flags & TRANSPORT_CONNECTION_F_USE_BUFFER)
+                vec_del1(to_free, vec_search (to_free, from[frame->n_vectors - n_left_from]));
+          }
 	  /* Don't accept out of order fins lower */
 	  if (vnet_buffer (b[0])->tcp.seq_end != tc->rcv_nxt)
 	    goto drop;
@@ -2440,7 +2464,10 @@ tcp46_rcv_process_inline (vlib_main_t *vm, vlib_node_runtime_t *node,
   tcp_inc_counter (rcv_process, TCP_ERROR_MSG_QUEUE_FULL, errors);
   tcp_handle_postponed_dequeues (wrk);
   tcp_handle_disconnects (wrk);
-  vlib_buffer_free (vm, from, frame->n_vectors);
+  
+  //vlib_buffer_free (vm, from, frame->n_vectors);
+  vlib_buffer_free (vm, to_free, vec_len (to_free));
+  vec_free (to_free);  
 
   return frame->n_vectors;
 }

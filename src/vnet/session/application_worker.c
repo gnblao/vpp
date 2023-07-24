@@ -160,11 +160,22 @@ app_worker_alloc_session_fifos (segment_manager_t * sm, session_t * s)
 {
   svm_fifo_t *rx_fifo = 0, *tx_fifo = 0;
   int rv;
+  segment_manager_props_t *props;
+
+  props = segment_manager_properties_get (sm);
+
 
   if ((rv = segment_manager_alloc_session_fifos (sm, s->thread_index,
 						 &rx_fifo, &tx_fifo)))
     return rv;
 
+  if (rv == 0 && props->use_fifo_buffer) {
+    rx_fifo->flags |= SVM_FIFO_F_LL_BUFFER;
+//    tx_fifo->flags |= SVM_FIFO_F_LL_BUFFER;
+
+    s->flags |= SESSION_F_USE_BUFFER;
+  }
+ 
   rx_fifo->shr->master_session_index = s->session_index;
   rx_fifo->master_thread_index = s->thread_index;
 

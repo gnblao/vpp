@@ -373,7 +373,9 @@ session_mq_recycle_buffer_handler (void *data)
   if (!app)
     return;
 
-  clib_warning("%U", format_session_recycle_buffer_msg, mp);
+  if (0)
+      clib_warning("%U", format_session_recycle_buffer_msg, mp);
+  
   if (mp->n_buffers) {
       vlib_buffer_free(vlib_get_main(), mp->buffers, mp->n_buffers);
   }

@@ -327,12 +327,12 @@ ooo_segment_try_collect (svm_fifo_t * f, u32 n_bytes_enqueued, u32 * tail)
     {
       s_index = s - f->ooo_segments;
     
-      if (f->flags == SVM_FIFO_F_LL_BUFFER) {
+      if (f->flags & SVM_FIFO_F_LL_BUFFER) {
           clib_memset(b_seg, 0, sizeof (*b_seg));
           b_seg->bi = s->bi;
           b_seg->start = s->start;
           b_seg->length = s->length;
-          clib_warning("buffer_index:%d", b_seg->bi);
+          clib_warning("xxxxxxxxxxxxxxxbuffer_index:%d b_seg->length:%u", b_seg->bi, b_seg->length);
 
           svm_fifo_enqueue(f, sizeof( * b_seg), (u8* ) b_seg);
       }

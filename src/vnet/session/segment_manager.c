@@ -42,7 +42,7 @@ do {									\
     clib_rwlock_reader_unlock (&(SM)->segments_rwlock);			\
 } while (0)
 
-static segment_manager_props_t *
+segment_manager_props_t *
 segment_manager_properties_get (segment_manager_t * sm)
 {
   app_worker_t *app_wrk = app_worker_get (sm->app_wrk_index);
@@ -849,12 +849,7 @@ segment_manager_alloc_session_fifos (segment_manager_t * sm,
   if (PREDICT_FALSE (rv < 0))
     rv = sm_lock_and_alloc_segment_and_fifos (sm, props, thread_index,
 						rx_fifo, tx_fifo);
-
-  if (rv == 0 && props->use_fifo_buffer) {
-    (*rx_fifo)->flags = SVM_FIFO_F_LL_BUFFER;
-//    (*tx_fifo)->flags = SVM_FIFO_F_LL_BUFFER;
-  }
-  
+ 
   return rv;
 }
 

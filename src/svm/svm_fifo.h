@@ -62,6 +62,7 @@ typedef struct svm_fifo_buffer_seg_
   u32 start;	/**< Start of segment, normalized*/
   u32 length;	/**< Length of segment */
   u32 bi;	/**< buffer index */
+  u32 debug;	/**< buffer index */
 } svm_fifo_buffer_seg_t;
 
 

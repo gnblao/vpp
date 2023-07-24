@@ -13,6 +13,7 @@
  * limitations under the License.
  */
 
+#include "vlib/svm_extend.h"
 #include <vcl/vcl_private.h>
 
 static pthread_key_t vcl_worker_stop_key;
@@ -326,7 +327,8 @@ vcl_session_read_ready (vcl_session_t * s)
   if (vcl_session_is_open (s))
     {
       if (vcl_session_is_ct (s))
-	return svm_fifo_max_dequeue_cons (s->ct_rx_fifo);
+	return svm_fifo_max_dequeue_cons_maybe_buffer (s->ct_rx_fifo);
+	//return svm_fifo_max_dequeue_cons (s->ct_rx_fifo);
 
       if (s->is_dgram)
 	{
@@ -344,7 +346,8 @@ vcl_session_read_ready (vcl_session_t * s)
 	  return ph.data_length;
 	}
 
-      return svm_fifo_max_dequeue_cons (s->rx_fifo);
+      //return svm_fifo_max_dequeue_cons (s->rx_fifo);
+      return svm_fifo_max_dequeue_cons_maybe_buffer (s->rx_fifo);
     }
   else if (s->session_state == VCL_STATE_LISTEN)
     {

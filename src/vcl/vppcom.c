@@ -13,6 +13,7 @@
  * limitations under the License.
  */
 
+#include "vlib/svm_extend.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <vcl/vppcom.h>
@@ -207,6 +208,9 @@ vcl_send_session_recycle_buffer (vcl_worker_t * wrk, vcl_session_t * s, int is_f
   /* Send to thread that owns the session */
   mq = s->vpp_evt_q;
 
+  if (!(s->rx_fifo->flags & SVM_FIFO_F_LL_BUFFER))
+      return;
+
   if (is_free) {
       if (s->rx_fifo->cache_buffer)
           vec_add1 (s->rx_fifo->free_buffers, vlib_get_buffer_index(vm, s->rx_fifo->cache_buffer));
@@ -235,14 +239,14 @@ vcl_send_session_recycle_buffer (vcl_worker_t * wrk, vcl_session_t * s, int is_f
       vec_delete (s->rx_fifo->free_buffers, nb, 0);
       len -= nb;
     
-      VDBG (0, "%U", format_session_recycle_buffer_msg, mp);
+      VDBG (1, "%U", format_session_recycle_buffer_msg, mp);
       app_send_ctrl_evt_to_vpp (mq, app_evt);
     }
 
-  vec_reset_length(s->rx_fifo->free_buffers);
+  vec_reset_length (s->rx_fifo->free_buffers);
   if (is_free) {
-      vec_free(s->rx_fifo->free_buffers);
-      vec_free(s->tx_fifo->free_buffers);
+      vec_free (s->rx_fifo->free_buffers);
+      vec_free (s->tx_fifo->free_buffers);
   }
 }
 
@@ -797,7 +801,7 @@ vcl_session_recycle_buffer_handler (vcl_worker_t * wrk,
 {
   vcl_session_t *s;
   s = vcl_session_get (wrk, e->session_index);
-
+    
   if (s->flags & VCL_SESSION_F_PENDING_RECYCLE_BUFFER)
     {
       vcl_send_session_recycle_buffer (wrk, s, 0);
@@ -2123,7 +2127,7 @@ vppcom_session_read_internal (uint32_t session_handle, void *buf, int n,
   rx_fifo = is_ct ? s->ct_rx_fifo : s->rx_fifo;
   s->flags &= ~VCL_SESSION_F_HAS_RX_EVT;
 
-  if (svm_fifo_is_empty_cons (rx_fifo))
+  if (svm_fifo_is_empty_cons_maybe_buffer (rx_fifo))
     {
       if (is_nonblocking)
 	{
@@ -2134,7 +2138,7 @@ vppcom_session_read_internal (uint32_t session_handle, void *buf, int n,
 	  svm_fifo_unset_event (rx_fifo);
 	  return VPPCOM_EWOULDBLOCK;
 	}
-      while (svm_fifo_is_empty_cons (rx_fifo))
+      while (svm_fifo_is_empty_cons_maybe_buffer (rx_fifo))
 	{
 	  if (vcl_session_is_closing (s))
 	    return vcl_session_closing_error (s);
@@ -2162,12 +2166,12 @@ read_again:
 
   n_read += rv;
 
-  if (svm_fifo_is_empty_cons (rx_fifo))
+  if (svm_fifo_is_empty_cons_maybe_buffer (rx_fifo))
     {
       if (is_ct)
 	svm_fifo_unset_event (s->rx_fifo);
       svm_fifo_unset_event (rx_fifo);
-      if (!svm_fifo_is_empty_cons (rx_fifo)
+      if (!svm_fifo_is_empty_cons_maybe_buffer (rx_fifo)
 	  && svm_fifo_set_event (rx_fifo) && is_nonblocking)
 	{
 	  vec_add2 (wrk->unhandled_evts_vector, e, 1);

@@ -809,9 +809,8 @@ app_recv_stream_fifo_raw (svm_fifo_t *f, u8 * buf, u32 len, u8 clear_evt, u32 pe
   if (f->flags & SVM_FIFO_F_LL_BUFFER)
       return app_recv_stream_raw_w_buffer (f, buf, len, clear_evt, peek);
   
-  return app_recv_stream_raw_w_buffer(f, buf, len, clear_evt, peek);
+  return app_recv_stream_raw(f, buf, len, clear_evt, peek);
 }
-
 
 always_inline int
 app_recv_stream (app_session_t * s, u8 * buf, u32 len, u32 peek)

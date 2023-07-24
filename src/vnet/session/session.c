@@ -638,7 +638,7 @@ session_enqueue_stream_connection (transport_connection_t * tc,
 
   if (is_in_order)
     {
-      if (s->rx_fifo->flags == SVM_FIFO_F_LL_BUFFER)
+      if (s->rx_fifo->flags & SVM_FIFO_F_LL_BUFFER)
 	enqueued = svm_fifo_enqueue_w_buffer (s->rx_fifo, b);
       else
 	{
@@ -656,7 +656,7 @@ session_enqueue_stream_connection (transport_connection_t * tc,
     }
   else
     {
-      if (s->rx_fifo->flags == SVM_FIFO_F_LL_BUFFER)
+      if (s->rx_fifo->flags & SVM_FIFO_F_LL_BUFFER)
 	rv = svm_fifo_enqueue_w_buffer_with_offset (s->rx_fifo, offset, b);
       else
 	{
@@ -1001,6 +1001,9 @@ session_stream_connect_notify (transport_connection_t * tc,
   s = session_get (new_si, new_ti);
   session_set_state (s, SESSION_STATE_READY);
   session_lookup_add_connection (tc, session_handle (s));
+  
+  if (s->flags & SESSION_F_USE_BUFFER)
+      tc->flags |= TRANSPORT_CONNECTION_F_USE_BUFFER;
 
   if (app_worker_connect_notify (app_wrk, s, SESSION_E_NONE, opaque))
     {
@@ -1366,6 +1369,9 @@ session_stream_accept (transport_connection_t * tc, u32 listener_index,
 
   session_lookup_add_connection (tc, session_handle (s));
 
+  if (s->flags & SESSION_F_USE_BUFFER)
+      tc->flags |= TRANSPORT_CONNECTION_F_USE_BUFFER;
+  
   /* Shoulder-tap the server */
   if (notify)
     {
@@ -1449,6 +1455,10 @@ session_open_cl (session_endpoint_cfg_t *rmt, session_handle_t *rsh)
   *rsh = sh;
 
   session_lookup_add_connection (tc, sh);
+
+  if (s->flags & SESSION_F_USE_BUFFER)
+      tc->flags |= TRANSPORT_CONNECTION_F_USE_BUFFER;
+
   return app_worker_connect_notify (app_wrk, s, SESSION_E_NONE, rmt->opaque);
 }
 

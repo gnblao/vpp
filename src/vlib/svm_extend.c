@@ -1,13 +1,90 @@
 
-#include "vppinfra/error.h"
 #include <svm/svm_fifo.h>
 #include <vlib/vlib.h>
+
+static u8 *
+format_b_seg(u8 *s, va_list *va) {
+    svm_fifo_buffer_seg_t *b_seg;
+    b_seg = va_arg (*va, void *); 
+    
+    s = format(s, "b_seg->bi:%u ", b_seg->bi);
+    s = format(s, "b_seg->start:%u ", b_seg->start);
+    s = format(s, "b_seg->length:%u ", b_seg->length);
+    s = format(s, "b_seg->debug:%u ", b_seg->debug);
+
+    return s;
+}
+
+static u8 *
+format_vlib_buffer_2 (u8 * s, va_list * args)
+{
+  vlib_main_t *vm = vlib_get_first_main ();
+  vlib_buffer_t *b = va_arg (*args, vlib_buffer_t *);
+  u32 indent = format_get_indent (s);
+
+  s = format (s, "%U", format_vlib_buffer_no_chain, b);
+
+  while (b->flags & VLIB_BUFFER_NEXT_PRESENT)
+    {
+      u32 next_buffer = b->next_buffer;
+      b = vlib_get_buffer (vm, next_buffer);
+
+      s =
+	format (s, "\n%Unext-buffer 0x%x, segment length %d, ref-count %u",
+		format_white_space, indent, next_buffer, b->current_length,
+		b->ref_count);
+    }
+
+  return s;
+}
+
+u8 *
+format_vlib_buffer_and_data_2 (u8 * s, va_list * args)
+{
+  vlib_buffer_t *b = va_arg (*args, vlib_buffer_t *);
+
+  s = format (s, "%U, %U",
+	      format_vlib_buffer_2, b,
+	      format_hex_bytes, vlib_buffer_get_current (b), 64);
+
+  return s;
+}
+
+static inline u32
+svm_fifo_max_dequeue_cons_w_buffer (svm_fifo_t * f)
+{
+  u32 tail, head, cursize;
+  f_load_head2_tail2_cons (f, &head, &tail);
+
+  /* current size of fifo can only increase during dequeue: SPSC */
+  cursize = f_cursize (f, head, tail);
+  
+  if (f->cache_buffer && f->cache_length)
+      cursize += f->cache_length - f->cache_pos;
+
+  return cursize;
+}
+
+inline u32 
+svm_fifo_max_dequeue_cons_maybe_buffer (svm_fifo_t * f) {
+    if (f->flags & SVM_FIFO_F_LL_BUFFER)
+        return svm_fifo_max_dequeue_cons_w_buffer(f);
+
+    return svm_fifo_max_dequeue_cons(f);
+}
+
+inline int
+svm_fifo_is_empty_cons_maybe_buffer (svm_fifo_t * f)
+{
+  return (svm_fifo_max_dequeue_cons_maybe_buffer (f) == 0);
+}
 
 int
 svm_fifo_enqueue_w_buffer (svm_fifo_t * f, vlib_buffer_t *b)
 {
   u32 tail, head, free_count, len;
   svm_fifo_buffer_seg_t b_seg_, *b_seg=&b_seg_;
+
 
   len = vlib_buffer_length_in_chain(vlib_get_main(), b);
 
@@ -22,8 +99,11 @@ svm_fifo_enqueue_w_buffer (svm_fifo_t * f, vlib_buffer_t *b)
   b_seg->bi = vlib_get_buffer_index(vlib_get_main(), b);
   b_seg->start = tail;
   b_seg->length = len;
-
-  clib_warning("buffer_index:%d", b_seg->bi);
+  
+//  static u32 g_id = 0;
+//  b_seg->debug = g_id++;
+//  
+//  clib_warning("-----enqueue-------%U----[%U]", format_b_seg, b_seg, format_vlib_buffer_and_data_2, b);
 
   svm_fifo_enqueue(f, sizeof( * b_seg), (u8* ) b_seg);
   
@@ -101,21 +181,26 @@ svm_fifo_dequeue_w_buffer (svm_fifo_t * f, u32 len, u8 * dst)
     {
       if (!f->cache_buffer || f->cache_length <= f->cache_pos)
 	{
-	  svm_fifo_dequeue (f, sizeof (*b_seg), (u8 *) b_seg);
+	  if (svm_fifo_dequeue (f, sizeof (*b_seg), (u8 *) b_seg) != sizeof(*b_seg))
+              break;
 
 	  /* store-rel: consumer owned index (paired with load-acq in producer)
 	   */
 	  clib_atomic_store_rel_n (&f->shr->head2,
 				   b_seg->start + b_seg->length);
 
-	  if (f->cache_buffer)
-	    vec_add1 (f->free_buffers, vlib_get_buffer_index (vm, f->cache_buffer));
+	  if (f->cache_buffer) {
+              vec_add1 (f->free_buffers, vlib_get_buffer_index (vm, f->cache_buffer));
+          }
 
 	  f->cache_buffer = vlib_get_buffer (vm, b_seg->bi);
 	  f->cache_pos = 0;
 	  f->cache_length =
 	    vlib_buffer_length_in_chain (vm, f->cache_buffer);
-      
+     
+          if (PREDICT_FALSE(f->cache_length != b_seg->length))
+              clib_warning("-----bug-------%U----[%U]", format_b_seg, b_seg, format_vlib_buffer_and_data_2, f->cache_buffer);
+
           chain_b = f->cache_buffer;
           chain_in_off = 0;
 	}
@@ -124,8 +209,11 @@ svm_fifo_dequeue_w_buffer (svm_fifo_t * f, u32 len, u8 * dst)
 	{
 	  chain_in_off += chain_b->current_length;
 
-	  chain_b = vlib_get_buffer (vm, chain_b->next_buffer);
-	  continue;
+	  if (chain_b->next_buffer)
+	  {
+	      chain_b = vlib_get_buffer (vm, chain_b->next_buffer);
+	      continue;
+	  }
 	}
 
       n = len - to_copy;

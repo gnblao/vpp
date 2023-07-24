@@ -50,6 +50,7 @@ typedef enum transport_service_type_
  *        have fifos associated to them
  */
 #define foreach_transport_connection_flag                                     \
+  _ (USE_BUFFER, "use_buffer")                                                 \
   _ (IS_TX_PACED, "tx_paced")                                                 \
   _ (NO_LOOKUP, "no_lookup")                                                  \
   _ (DESCHED, "descheduled")                                                  \

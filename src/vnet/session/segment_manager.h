@@ -184,6 +184,8 @@ void segment_manager_format_sessions (segment_manager_t * sm, int verbose);
 
 void segment_manager_main_init (void);
 
+segment_manager_props_t *
+segment_manager_properties_get (segment_manager_t * sm);
 segment_manager_props_t *segment_manager_props_init (segment_manager_props_t *
 						     sm);
 
